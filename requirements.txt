@@ -1,0 +1,6 @@
+# Nessuna libreria esterna richiesta.
+# Il programma usa solo moduli della libreria standard Python:
+#   - random (generazione numeri casuali)
+#   - time   (pause nell'output)
+#
+# Requisito minimo: Python 3.6 o superiore
