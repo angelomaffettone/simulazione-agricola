@@ -1,266 +1,328 @@
-# simulazione produzione settore primario
-# progetto python - azienda agricola con grano, pomodori e allevamento bovino
-# autore: [Nome Cognome]
-# anno accademico 2024/2025
+"""
+Simulazione della Produzione nel Settore Primario
+
+Scenario: Azienda agricola mista con colture e allevamento.
+
+Output simulati:
+  1. Grano          (coltura - sequenza raccolta)
+  2. Pomodori        (coltura - sequenza raccolta)
+  3. Latte bovino    (allevamento - sequenza allevamento)
+
+Sequenze produttive:
+  A. Raccolta colture  → preparazione → semina → crescita → raccolta
+  B. Produzione latte  → alimentazione → mungitura → stoccaggio → distribuzione
+
+Autore: Angelo Maffettone
+Anno accademico: 2026/2027
+"""
 
 import random
 import time
 
-# parametri configurabili - modificare questi valori per cambiare scenario
-# ho messo i valori in un dizionario cosi sono tutti in un posto solo
+# ──────────────────────────────────────────────────────────────────────────────
+# 1. CONFIGURAZIONE PARAMETRI (modificabili per scenari diversi)
+# ──────────────────────────────────────────────────────────────────────────────
 
-parametri_grano = {
-    "ettari_min": 10,
-    "ettari_max": 50,
-    "resa_min": 3.0,       # tonnellate per ettaro, annata brutta
-    "resa_max": 6.5,       # tonnellate per ettaro, annata buona
-    "raccolta_giorno": 8.0,  # quante tonnellate riesce a raccogliere al giorno
-    "costo_ettaro": 400,
-    "prezzo_ton": 220,
+CONFIG = {
+    # --- COLTURE ---
+    "grano": {
+        "ettari_min": 10,
+        "ettari_max": 50,
+        "resa_per_ettaro_min": 3.0,      # tonnellate/ettaro (annata scarsa)
+        "resa_per_ettaro_max": 6.5,      # tonnellate/ettaro (annata buona)
+        "capacita_raccolta_giornaliera": 8.0,  # tonnellate/giorno
+        "costo_per_ettaro": 400,         # euro/ettaro
+        "prezzo_vendita_per_ton": 220,   # euro/tonnellata
+    },
+    "pomodori": {
+        "ettari_min": 5,
+        "ettari_max": 20,
+        "resa_per_ettaro_min": 40.0,     # tonnellate/ettaro
+        "resa_per_ettaro_max": 80.0,
+        "capacita_raccolta_giornaliera": 12.0,
+        "costo_per_ettaro": 3500,
+        "prezzo_vendita_per_ton": 90,
+    },
+    # --- ALLEVAMENTO ---
+    "latte": {
+        "capi_min": 20,
+        "capi_max": 100,
+        "produzione_per_capo_min": 15.0, # litri/capo/giorno (mucca in buona forma)
+        "produzione_per_capo_max": 28.0,
+        "capacita_stoccaggio_giornaliera": 1000,  # litri/giorno
+        "costo_per_capo_giornaliero": 4.5,  # euro/capo/giorno (mangime + cure)
+        "prezzo_vendita_per_litro": 0.52,   # euro/litro
+        "giorni_produzione": 305,           # giorni lattazione annua
+    },
+    # --- GLOBALE ---
+    "seme_casuale": None,  # Impostare un numero intero per risultati riproducibili
+                           # Esempio: 42 → stesso risultato ad ogni esecuzione
+                           # None → completamente casuale
 }
 
-parametri_pomodori = {
-    "ettari_min": 5,
-    "ettari_max": 20,
-    "resa_min": 40.0,
-    "resa_max": 80.0,
-    "raccolta_giorno": 12.0,
-    "costo_ettaro": 3500,
-    "prezzo_ton": 90,
-}
+# ──────────────────────────────────────────────────────────────────────────────
+# 2. FUNZIONI DI UTILITÀ
+# ──────────────────────────────────────────────────────────────────────────────
 
-parametri_latte = {
-    "capi_min": 20,
-    "capi_max": 100,
-    "litri_per_capo_min": 15.0,
-    "litri_per_capo_max": 28.0,
-    "max_stoccaggio": 1000,   # litri al giorno che riesce a conservare
-    "costo_capo_giorno": 4.5,
-    "prezzo_litro": 0.52,
-    "giorni_lattazione": 305,
-}
-
-# seme casuale: mettere un numero per avere sempre gli stessi risultati
-# oppure lasciare None per risultati diversi ogni volta
-SEME = None
-
-
-# funzione per stampare una linea di separazione
-def linea(testo=""):
-    if testo != "":
-        print("\n--- " + testo + " ---")
+def separatore(titolo=""):
+    """Stampa una riga separatrice con titolo opzionale."""
+    if titolo:
+        print(f"\n{'─' * 20} {titolo} {'─' * 20}")
     else:
-        print("-" * 40)
+        print("─" * 55)
 
 
-# piccola pausa per rendere l'output piu leggibile
-def attendi():
-    time.sleep(0.4)
+def pausa_simulazione(secondi=0.3):
+    """Piccola pausa per rendere la simulazione più leggibile."""
+    time.sleep(secondi)
 
 
-# -------------------------------------------------------
-# SEQUENZA A: simulazione raccolta coltura
-# -------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
+# 3. SEQUENZA A – RACCOLTA COLTURE
+# ──────────────────────────────────────────────────────────────────────────────
 
-def simula_coltura(nome, params):
-    # questa funzione simula tutta la sequenza produttiva di una coltura
-    # prende il nome e i parametri come input e restituisce i risultati
+def simula_coltura(nome_coltura: str) -> dict:
+    """
+    Simula la sequenza produttiva di una coltura.
 
-    linea("SEQUENZA RACCOLTA - " + nome.upper())
-    attendi()
+    Sequenza:
+        Passo 1 - Preparazione terreno
+        Passo 2 - Semina / Trapianto
+        Passo 3 - Crescita (variabile casuale)
+        Passo 4 - Raccolta
+        Passo 5 - Calcolo risultati economici
 
-    # passo 1: preparazione terreno
-    print("Passo 1 - Preparazione del terreno")
-    ettari = round(random.uniform(params["ettari_min"], params["ettari_max"]), 1)
-    print("  ettari disponibili: " + str(ettari))
-    attendi()
+    Parametri configurabili: ettari, resa, capacità di raccolta,
+                             costo per ettaro, prezzo di vendita.
 
-    # passo 2: semina
-    print("Passo 2 - Semina")
-    print("  semina completata su " + str(ettari) + " ettari")
-    attendi()
+    Args:
+        nome_coltura: chiave nel dizionario CONFIG (es. "grano")
 
-    # passo 3: crescita - la resa dipende dal meteo quindi e casuale
-    print("Passo 3 - Crescita")
-    resa = round(random.uniform(params["resa_min"], params["resa_max"]), 2)
-    produzione = ettari * resa
-    produzione = round(produzione, 2)
-    print("  resa per ettaro: " + str(resa) + " t/ha")
-    print("  produzione totale: " + str(produzione) + " tonnellate")
-    attendi()
+    Returns:
+        dict con i risultati della simulazione
+    """
+    cfg = CONFIG[nome_coltura]
 
-    # passo 4: raccolta - calcolo quanti giorni ci vogliono
-    print("Passo 4 - Raccolta")
-    giorni = produzione / params["raccolta_giorno"]
-    giorni = round(giorni, 1)
-    print("  capacita giornaliera: " + str(params["raccolta_giorno"]) + " t/giorno")
-    print("  giorni necessari: " + str(giorni))
-    attendi()
+    separatore(f"SEQUENZA RACCOLTA – {nome_coltura.upper()}")
+    print(f"Avvio simulazione per la coltura: {nome_coltura.capitalize()}\n")
+    pausa_simulazione()
 
-    # calcolo economico
-    costo = ettari * params["costo_ettaro"]
-    costo = round(costo, 2)
-    ricavo = produzione * params["prezzo_ton"]
-    ricavo = round(ricavo, 2)
-    margine = ricavo - costo
-    margine = round(margine, 2)
+    # PASSO 1 – Preparazione terreno
+    print("► Passo 1/4 – Preparazione del terreno")
+    ettari = round(random.uniform(cfg["ettari_min"], cfg["ettari_max"]), 1)
+    print(f"  Superficie disponibile generata casualmente: {ettari} ettari")
+    pausa_simulazione()
 
-    # metto tutto in un dizionario per poi usarlo nel report
-    risultato = {}
-    risultato["tipo"] = nome
-    risultato["ettari"] = ettari
-    risultato["resa"] = resa
-    risultato["produzione_ton"] = produzione
-    risultato["giorni_raccolta"] = giorni
-    risultato["costo"] = costo
-    risultato["ricavo"] = ricavo
-    risultato["margine"] = margine
+    # PASSO 2 – Semina
+    print("► Passo 2/4 – Semina / Trapianto")
+    print(f"  Semina completata su {ettari} ettari.")
+    pausa_simulazione()
 
+    # PASSO 3 – Crescita (resa generata casualmente)
+    print("► Passo 3/4 – Fase di crescita")
+    resa = round(random.uniform(
+        cfg["resa_per_ettaro_min"],
+        cfg["resa_per_ettaro_max"]
+    ), 2)
+    produzione_totale = round(ettari * resa, 2)
+    print(f"  Resa per ettaro (variabile meteo/clima): {resa} t/ha")
+    print(f"  Produzione totale stimata: {produzione_totale} tonnellate")
+    pausa_simulazione()
+
+    # PASSO 4 – Raccolta
+    print("► Passo 4/4 – Raccolta")
+    capacita = cfg["capacita_raccolta_giornaliera"]
+    giorni_raccolta = round(produzione_totale / capacita, 1)
+    print(f"  Capacità giornaliera macchinari: {capacita} t/giorno")
+    print(f"  Giorni necessari per la raccolta: {giorni_raccolta} giorni")
+    pausa_simulazione()
+
+    # Calcolo economico
+    costo_totale = round(ettari * cfg["costo_per_ettaro"], 2)
+    ricavo_totale = round(produzione_totale * cfg["prezzo_vendita_per_ton"], 2)
+    margine = round(ricavo_totale - costo_totale, 2)
+
+    risultato = {
+        "coltura": nome_coltura,
+        "ettari": ettari,
+        "resa_per_ettaro": resa,
+        "produzione_tonnellate": produzione_totale,
+        "giorni_raccolta": giorni_raccolta,
+        "costo_totale_eur": costo_totale,
+        "ricavo_totale_eur": ricavo_totale,
+        "margine_eur": margine,
+    }
     return risultato
 
 
-# -------------------------------------------------------
-# SEQUENZA B: simulazione allevamento bovino da latte
-# -------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. SEQUENZA B – PRODUZIONE LATTE (ALLEVAMENTO)
+# ──────────────────────────────────────────────────────────────────────────────
 
-def simula_latte(params):
-    # questa funzione e diversa dalla precedente perche l'allevamento
-    # ha una logica diversa rispetto alla raccolta delle colture
+def simula_allevamento_latte() -> dict:
+    """
+    Simula la sequenza produttiva di un allevamento bovino da latte.
 
-    linea("SEQUENZA ALLEVAMENTO - LATTE BOVINO")
-    attendi()
+    Sequenza:
+        Passo 1 - Alimentazione capi
+        Passo 2 - Mungitura giornaliera
+        Passo 3 - Stoccaggio e controllo qualità
+        Passo 4 - Distribuzione / vendita
+        Passo 5 - Calcolo risultati economici annuali
 
-    # passo 1: alimentazione
-    print("Passo 1 - Alimentazione")
-    n_capi = random.randint(params["capi_min"], params["capi_max"])
-    print("  numero mucche: " + str(n_capi))
-    attendi()
+    Parametri configurabili: numero capi, produzione per capo,
+                             costo gestione, prezzo latte, giorni lattazione.
 
-    # passo 2: mungitura giornaliera
-    print("Passo 2 - Mungitura")
-    litri_capo = round(random.uniform(params["litri_per_capo_min"], params["litri_per_capo_max"]), 1)
-    litri_totali = round(n_capi * litri_capo, 1)
-    print("  litri per capo al giorno: " + str(litri_capo))
-    print("  totale giornaliero: " + str(litri_totali) + " litri")
-    attendi()
+    Returns:
+        dict con i risultati della simulazione
+    """
+    cfg = CONFIG["latte"]
 
-    # passo 3: stoccaggio - controllo se supera la capacita del serbatoio
-    print("Passo 3 - Stoccaggio")
-    if litri_totali > params["max_stoccaggio"]:
-        # produzione troppa, non riesce a stoccare tutto
-        eccedenza = round(litri_totali - params["max_stoccaggio"], 1)
-        print("  ATTENZIONE: capacita serbatoio superata!")
-        print("  stoccato: " + str(params["max_stoccaggio"]) + " litri")
-        print("  perso: " + str(eccedenza) + " litri")
-        litri_effettivi = params["max_stoccaggio"]
+    separatore("SEQUENZA ALLEVAMENTO – PRODUZIONE LATTE BOVINO")
+    print("Avvio simulazione per l'allevamento bovino da latte\n")
+    pausa_simulazione()
+
+    # PASSO 1 – Alimentazione
+    print("► Passo 1/4 – Alimentazione capi")
+    n_capi = random.randint(cfg["capi_min"], cfg["capi_max"])
+    print(f"  Numero capi in lattazione (casuale): {n_capi} mucche")
+    print(f"  Razione giornaliera e integratori somministrati.")
+    pausa_simulazione()
+
+    # PASSO 2 – Mungitura
+    print("► Passo 2/4 – Mungitura giornaliera")
+    prod_per_capo = round(random.uniform(
+        cfg["produzione_per_capo_min"],
+        cfg["produzione_per_capo_max"]
+    ), 1)
+    produzione_giornaliera = round(n_capi * prod_per_capo, 1)
+    print(f"  Produzione media per capo: {prod_per_capo} litri/giorno")
+    print(f"  Produzione totale giornaliera: {produzione_giornaliera} litri")
+    pausa_simulazione()
+
+    # PASSO 3 – Stoccaggio
+    print("► Passo 3/4 – Stoccaggio e controllo qualità")
+    capacita = cfg["capacita_stoccaggio_giornaliera"]
+    if produzione_giornaliera > capacita:
+        eccedenza = round(produzione_giornaliera - capacita, 1)
+        print(f"  ⚠️  Attenzione: capacità stoccaggio superata!")
+        print(f"  Stoccato: {capacita} litri | Eccedenza non stoccabile: {eccedenza} litri")
+        produzione_effettiva_giornaliera = capacita
     else:
-        print("  tutto stoccato: " + str(litri_totali) + " litri")
-        litri_effettivi = litri_totali
-    attendi()
+        print(f"  Tutto il latte stoccato correttamente ({produzione_giornaliera} litri)")
+        produzione_effettiva_giornaliera = produzione_giornaliera
+    pausa_simulazione()
 
-    # passo 4: distribuzione annuale
-    print("Passo 4 - Distribuzione")
-    giorni = params["giorni_lattazione"]
-    litri_anno = round(litri_effettivi * giorni, 0)
-    print("  giorni di lattazione: " + str(giorni))
-    print("  produzione annuale: " + str(litri_anno) + " litri")
-    attendi()
+    # PASSO 4 – Distribuzione
+    print("► Passo 4/4 – Distribuzione / Vendita")
+    giorni = cfg["giorni_produzione"]
+    produzione_annuale = round(produzione_effettiva_giornaliera * giorni, 0)
+    print(f"  Giorni di lattazione annui: {giorni}")
+    print(f"  Produzione annuale effettiva: {produzione_annuale:,.0f} litri")
+    pausa_simulazione()
 
-    # calcolo costi e ricavi annuali
-    costo_anno = n_capi * params["costo_capo_giorno"] * giorni
-    costo_anno = round(costo_anno, 2)
-    ricavo_anno = litri_anno * params["prezzo_litro"]
-    ricavo_anno = round(ricavo_anno, 2)
-    margine = round(ricavo_anno - costo_anno, 2)
+    # Calcolo economico
+    costo_annuale = round(n_capi * cfg["costo_per_capo_giornaliero"] * giorni, 2)
+    ricavo_annuale = round(produzione_annuale * cfg["prezzo_vendita_per_litro"], 2)
+    margine = round(ricavo_annuale - costo_annuale, 2)
 
-    risultato = {}
-    risultato["tipo"] = "latte"
-    risultato["n_capi"] = n_capi
-    risultato["litri_giorno"] = litri_totali
-    risultato["litri_anno"] = litri_anno
-    risultato["costo"] = costo_anno
-    risultato["ricavo"] = ricavo_anno
-    risultato["margine"] = margine
-
+    risultato = {
+        "prodotto": "latte",
+        "n_capi": n_capi,
+        "produzione_per_capo_litri_giorno": prod_per_capo,
+        "produzione_giornaliera_litri": produzione_giornaliera,
+        "produzione_annuale_litri": produzione_annuale,
+        "giorni_lattazione": giorni,
+        "costo_totale_eur": costo_annuale,
+        "ricavo_totale_eur": ricavo_annuale,
+        "margine_eur": margine,
+    }
     return risultato
 
 
-# -------------------------------------------------------
-# REPORT FINALE
-# -------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
+# 5. REPORT FINALE
+# ──────────────────────────────────────────────────────────────────────────────
 
-def stampa_report(lista_risultati):
-    linea("REPORT FINALE")
+def stampa_report(risultati: list):
+    """
+    Stampa il riepilogo finale con tutti i risultati della simulazione.
 
-    tot_costi = 0
-    tot_ricavi = 0
-    tot_margine = 0
+    Args:
+        risultati: lista di dict restituiti dalle funzioni di simulazione
+    """
+    separatore("REPORT FINALE – RIEPILOGO PRODUZIONE")
 
-    for r in lista_risultati:
-        print("\n[" + r["tipo"].upper() + "]")
+    totale_costi = 0
+    totale_ricavi = 0
+    totale_margine = 0
 
-        # stampo dati diversi a seconda del tipo
-        if r["tipo"] == "latte":
-            print("  Capi allevati:     " + str(r["n_capi"]))
-            print("  Litri/anno:        " + str(r["litri_anno"]))
+    for r in risultati:
+        nome = r.get("coltura") or r.get("prodotto")
+        print(f"\n  [{nome.upper()}]")
+
+        if nome in ("grano", "pomodori"):
+            print(f"    Ettari coltivati:    {r['ettari']} ha")
+            print(f"    Produzione totale:   {r['produzione_tonnellate']} t")
+            print(f"    Giorni di raccolta:  {r['giorni_raccolta']}")
         else:
-            print("  Ettari:            " + str(r["ettari"]))
-            print("  Produzione (ton):  " + str(r["produzione_ton"]))
-            print("  Giorni raccolta:   " + str(r["giorni_raccolta"]))
+            print(f"    Capi in lattazione:  {r['n_capi']}")
+            print(f"    Prod. annuale:       {r['produzione_annuale_litri']:,.0f} litri")
 
-        print("  Costo totale:      " + str(r["costo"]) + " euro")
-        print("  Ricavo totale:     " + str(r["ricavo"]) + " euro")
+        print(f"    Costi totali:        € {r['costo_totale_eur']:>10,.2f}")
+        print(f"    Ricavi totali:       € {r['ricavo_totale_eur']:>10,.2f}")
+        margine = r['margine_eur']
+        simbolo = "✓" if margine >= 0 else "✗"
+        print(f"    Margine:             € {margine:>10,.2f}  {simbolo}")
 
-        if r["margine"] >= 0:
-            print("  Margine:           " + str(r["margine"]) + " euro  (positivo)")
-        else:
-            print("  Margine:           " + str(r["margine"]) + " euro  (negativo!)")
+        totale_costi += r['costo_totale_eur']
+        totale_ricavi += r['ricavo_totale_eur']
+        totale_margine += r['margine_eur']
 
-        tot_costi = tot_costi + r["costo"]
-        tot_ricavi = tot_ricavi + r["ricavo"]
-        tot_margine = tot_margine + r["margine"]
+    separatore()
+    print(f"  TOTALE COSTI AZIENDA:   € {totale_costi:>12,.2f}")
+    print(f"  TOTALE RICAVI AZIENDA:  € {totale_ricavi:>12,.2f}")
+    print(f"  MARGINE COMPLESSIVO:    € {totale_margine:>12,.2f}", end="")
+    print("  ✓ UTILE" if totale_margine >= 0 else "  ✗ PERDITA")
+    separatore()
 
-    linea()
-    print("TOTALE COSTI:    " + str(round(tot_costi, 2)) + " euro")
-    print("TOTALE RICAVI:   " + str(round(tot_ricavi, 2)) + " euro")
-    print("MARGINE TOTALE:  " + str(round(tot_margine, 2)) + " euro")
 
-    if tot_margine >= 0:
-        print("=> risultato positivo, l'azienda e in utile")
+# ──────────────────────────────────────────────────────────────────────────────
+# 6. MAIN – PUNTO DI INGRESSO
+# ──────────────────────────────────────────────────────────────────────────────
+
+def main():
+    print("=" * 55)
+    print("  SIMULAZIONE PRODUZIONE – SETTORE PRIMARIO")
+    print("  Azienda Agricola Mista (colture + allevamento)")
+    print("=" * 55)
+
+    # Imposta il seme casuale (riproducibilità opzionale)
+    if CONFIG["seme_casuale"] is not None:
+        random.seed(CONFIG["seme_casuale"])
+        print(f"\n[INFO] Seme casuale impostato: {CONFIG['seme_casuale']}")
     else:
-        print("=> risultato negativo, l'azienda e in perdita")
+        print("\n[INFO] Seme casuale: non impostato (risultati variabili)")
 
-    linea()
+    risultati = []
+
+    # ── SEQUENZA A: Colture ─────────────────────────────────────────
+    # Output 1: Grano
+    res_grano = simula_coltura("grano")
+    risultati.append(res_grano)
+
+    # Output 2: Pomodori
+    res_pomodori = simula_coltura("pomodori")
+    risultati.append(res_pomodori)
+
+    # ── SEQUENZA B: Allevamento ─────────────────────────────────────
+    # Output 3: Latte bovino
+    res_latte = simula_allevamento_latte()
+    risultati.append(res_latte)
+
+    # ── Report finale ───────────────────────────────────────────────
+    stampa_report(risultati)
 
 
-# -------------------------------------------------------
-# PROGRAMMA PRINCIPALE
-# -------------------------------------------------------
-
-print("=" * 45)
-print("SIMULAZIONE AZIENDA AGRICOLA MISTA")
-print("=" * 45)
-
-# imposto il seme se definito
-if SEME is not None:
-    random.seed(SEME)
-    print("seme casuale impostato: " + str(SEME))
-else:
-    print("nessun seme impostato, risultati casuali")
-
-# lista dove salvo i risultati di ogni simulazione
-tutti_i_risultati = []
-
-# sequenza A - colture
-ris_grano = simula_coltura("grano", parametri_grano)
-tutti_i_risultati.append(ris_grano)
-
-ris_pomodori = simula_coltura("pomodori", parametri_pomodori)
-tutti_i_risultati.append(ris_pomodori)
-
-# sequenza B - allevamento
-ris_latte = simula_latte(parametri_latte)
-tutti_i_risultati.append(ris_latte)
-
-# report finale con tutti i dati
-stampa_report(tutti_i_risultati)
+if __name__ == "__main__":
+    main()
